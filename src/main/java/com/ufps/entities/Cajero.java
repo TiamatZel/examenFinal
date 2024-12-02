@@ -7,18 +7,18 @@ import lombok.*;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "cajero")
 public class Cajero {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
     private String nombre;
+    private String documento;
+    private String email;
+    private String token;
 
-    @Column(nullable = false)
-    private String tokenAutorizacion;
-
-    // Getters, Setters, Constructor
+    @ManyToOne
+    @JoinColumn(name = "tienda_id")
+    private Tienda tienda;
 }
+

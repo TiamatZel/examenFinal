@@ -1,6 +1,7 @@
 package DTOs;
 
 import java.util.List;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -17,5 +18,6 @@ public class FacturaRequest {
     private VendedorDTO vendedor;
     private CajeroDTO cajero;
 }
+
 
 

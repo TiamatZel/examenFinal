@@ -7,26 +7,24 @@ import lombok.*;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "detalles_compra")
 public class DetalleCompra {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne
-    @JoinColumn(name = "producto_id", nullable = false)
-    private Producto producto;
-
-    @ManyToOne
-    @JoinColumn(name = "compra_id", nullable = false)
+    @JoinColumn(name = "compra_id")
     private Compra compra;
 
+    @ManyToOne
+    @JoinColumn(name = "producto_id")
+    private Producto producto;
+
     private Integer cantidad;
-
     private Double precio;
-    
     private Double descuento;
-
-    // Getters, Setters, Constructor
+	public void setPrecio(double precioFinal) {
+		this.precio = precioFinal;
+	}
 }
+

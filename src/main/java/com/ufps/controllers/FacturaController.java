@@ -23,7 +23,7 @@ public class FacturaController {
 
     @PostMapping("/{tiendaId}")
     public ResponseEntity<?> crearFactura(@PathVariable String tiendaId, @RequestBody FacturaRequest request) {
-        facturaService.crearFactura(tiendaId, request);
+        facturaService.procesarFactura(tiendaId, request);
         return ResponseEntity.ok("Factura registrada exitosamente");
     }
 }

@@ -1,62 +1,104 @@
 package com.ufps.services;
 
+import java.time.LocalDateTime;
+
 import org.springframework.stereotype.Service;
 
 import com.ufps.entities.*;
-import com.ufps.repositories.CompraRepository;
-import com.ufps.repositories.ProductoRepository;
+import com.ufps.repositories.*;
 
-import DTOs.FacturaRequest;
+import DTOs.*;
 import jakarta.transaction.Transactional;
+import lombok.*;
 
 @Service
+@Data
+@RequiredArgsConstructor
+@Transactional
 public class FacturaService {
 
-    private final CompraRepository compraRepository;
+    private final TiendaRepository tiendaRepository;
+    private final ClienteRepository clienteRepository;
     private final ProductoRepository productoRepository;
-    // Inyecta más repositorios según sea necesario
+    private final VendedorRepository vendedorRepository;
+    private final CajeroRepository cajeroRepository;
+    private final CompraRepository compraRepository;
+    private final DetalleCompraRepository detalleCompraRepository;
+    private final TipoPagoRepository tipoPagoRepository;
+    private final PagoRepository pagoRepository;
 
-    public FacturaService(CompraRepository compraRepository, ProductoRepository productoRepository) {
-        this.compraRepository = compraRepository;
-        this.productoRepository = productoRepository;
-    }
+    public void procesarFactura(String tiendaUuid, FacturaRequest facturaRequest) {
+        // Buscar Tienda
+        Tienda tienda = tiendaRepository.findByUuid(tiendaUuid)
+                .orElseThrow(() -> new RuntimeException("Tienda no encontrada con UUID: " + tiendaUuid));
 
-    @Transactional
-    public void crearFactura(String tiendaId, FacturaRequest request) {
-        // 1. Verificar cliente, tienda, vendedor, y cajero
-        Cliente cliente = obtenerORegistrarCliente(request.getCliente());
-        Tienda tienda = obtenerTienda(tiendaId);
-        Vendedor vendedor = obtenerVendedor(request.getVendedor().getDocumento());
-        Cajero cajero = validarCajero(request.getCajero().getToken());
+        // Buscar o Crear Cliente
+        Cliente cliente = clienteRepository.findByDocumento(facturaRequest.getCliente().getDocumento())
+                .orElseGet(() -> {
+                    Cliente nuevoCliente = new Cliente();
+                    nuevoCliente.setNombre(facturaRequest.getCliente().getNombre());
+                    nuevoCliente.setDocumento(facturaRequest.getCliente().getDocumento());
 
-        // 2. Crear la Compra
+                    TipoDocumento tipoDocumento = new TipoDocumento();
+                    tipoDocumento.setId(facturaRequest.getCliente().getTipoDocumentoId());
+                    nuevoCliente.setTipoDocumento(tipoDocumento);
+                    
+                    return clienteRepository.save(nuevoCliente);
+                });
+
+        // Buscar Vendedor
+        Vendedor vendedor = vendedorRepository.findByDocumento(facturaRequest.getVendedor().getDocumento())
+                .orElseThrow(() -> new RuntimeException("Vendedor no encontrado con documento: " + facturaRequest.getVendedor().getDocumento()));
+
+        // Buscar Cajero
+        Cajero cajero = cajeroRepository.findByToken(facturaRequest.getCajero().getToken())
+                .orElseThrow(() -> new RuntimeException("Cajero no encontrado con token: " + facturaRequest.getCajero().getToken()));
+
+        // Crear y Guardar la Compra
         Compra compra = new Compra();
         compra.setCliente(cliente);
         compra.setTienda(tienda);
         compra.setVendedor(vendedor);
         compra.setCajero(cajero);
-        compra.setImpuesto(request.getImpuesto());
         compra.setFecha(LocalDateTime.now());
+        compra.setImpuestos(facturaRequest.getImpuestos());
+        compra = compraRepository.save(compra);
 
-        compraRepository.save(compra);
-
-        // 3. Registrar Detalles de la Compra
-        for (ProductoCompraDTO prod : request.getProductos()) {
-            Producto producto = productoRepository.findByReferencia(prod.getReferencia())
-                               .orElseThrow(() -> new RuntimeException("Producto no encontrado"));
+        // Procesar Detalles de Compra y Calcular Total
+        double total = 0.0;
+        for (DetalleProductoDTO detalleProducto : facturaRequest.getProductos()) {
+            Producto producto = productoRepository.findByReferencia(detalleProducto.getReferencia())
+                    .orElseThrow(() -> new RuntimeException("Producto no encontrado con referencia: " + detalleProducto.getReferencia()));
 
             DetalleCompra detalle = new DetalleCompra();
             detalle.setCompra(compra);
             detalle.setProducto(producto);
-            detalle.setCantidad(prod.getCantidad());
-            detalle.setDescuento(prod.getDescuento());
-            detalle.setValor((producto.getPrecio() - prod.getDescuento()) * prod.getCantidad());
+            detalle.setCantidad(detalleProducto.getCantidad());
 
-            // Guardar el detalle
+            double precioFinal = producto.getPrecio() * detalleProducto.getCantidad() * 
+                                 (1 - detalleProducto.getDescuento() / 100.0);
+            detalle.setPrecio(precioFinal);
+            detalle.setDescuento(detalleProducto.getDescuento());
+
+            detalleCompraRepository.save(detalle);
+            total += precioFinal;
         }
+        compra.setTotal(total);
+        compraRepository.save(compra);
 
-        // 4. Registrar los Pagos asociados
-        // Implementa lógica similar para guardar la tabla `pago`.
+        // Procesar Pagos
+        for (MedioPagoDTO medioPago : facturaRequest.getMediosPago()) {
+            TipoPago tipoPago = tipoPagoRepository.findByNombre(medioPago.getTipoPago())
+                    .orElseThrow(() -> new RuntimeException("Tipo de pago no encontrado: " + medioPago.getTipoPago()));
 
+            Pago pago = new Pago();
+            pago.setCompra(compra);
+            pago.setTipoPago(tipoPago);
+            pago.setTarjetaTipo(medioPago.getTipoTarjeta());
+            pago.setCuotas(medioPago.getCuotas());
+            pago.setValor(medioPago.getValor());
+
+            pagoRepository.save(pago);
+        }
     }
 }

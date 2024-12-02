@@ -7,19 +7,15 @@ import lombok.*;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "vendedor")
 public class Vendedor {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
     private String nombre;
-
-    @Column(nullable = false)
-    private String telefono;
-
-    // Getters, Setters, Constructor
+    private String documento;
+    private String email;
 }
+
+
 

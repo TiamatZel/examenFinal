@@ -7,25 +7,22 @@ import lombok.*;
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Table(name = "pago")
 public class Pago {
-
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @ManyToOne
-    @JoinColumn(name = "compra_id", nullable = false)
+    @JoinColumn(name = "compra_id")
     private Compra compra;
 
     @ManyToOne
-    @JoinColumn(name = "tipo_pago_id", nullable = false)
+    @JoinColumn(name = "tipo_pago_id")
     private TipoPago tipoPago;
 
-    private Integer numeroCuotas;
-
-    private Double monto;
-
-    // Getters, Setters, Constructor
+    private String tarjetaTipo; // Tipo de tarjeta si aplica
+    private Integer cuotas; // Número de cuotas si aplica
+    private Double valor;
 }
+
 
