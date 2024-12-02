@@ -1,104 +1,199 @@
 package com.ufps.services;
 
-import java.time.LocalDateTime;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import com.ufps.entities.*;
 import com.ufps.repositories.*;
 
 import DTOs.*;
-import jakarta.transaction.Transactional;
-import lombok.*;
+
+import java.util.List;
+import java.util.Optional;
 
 @Service
-@Data
-@RequiredArgsConstructor
-@Transactional
 public class FacturaService {
 
-    private final TiendaRepository tiendaRepository;
-    private final ClienteRepository clienteRepository;
-    private final ProductoRepository productoRepository;
-    private final VendedorRepository vendedorRepository;
-    private final CajeroRepository cajeroRepository;
-    private final CompraRepository compraRepository;
-    private final DetalleCompraRepository detalleCompraRepository;
-    private final TipoPagoRepository tipoPagoRepository;
-    private final PagoRepository pagoRepository;
+    @Autowired
+    private TiendaRepository tiendaRepository;
 
-    public void procesarFactura(String tiendaUuid, FacturaRequest facturaRequest) {
-        // Buscar Tienda
-        Tienda tienda = tiendaRepository.findByUuid(tiendaUuid)
-                .orElseThrow(() -> new RuntimeException("Tienda no encontrada con UUID: " + tiendaUuid));
+    @Autowired
+    private CajeroRepository cajeroRepository;
 
-        // Buscar o Crear Cliente
-        Cliente cliente = clienteRepository.findByDocumento(facturaRequest.getCliente().getDocumento())
-                .orElseGet(() -> {
-                    Cliente nuevoCliente = new Cliente();
-                    nuevoCliente.setNombre(facturaRequest.getCliente().getNombre());
-                    nuevoCliente.setDocumento(facturaRequest.getCliente().getDocumento());
+    @Autowired
+    private ClienteRepository clienteRepository;
 
-                    TipoDocumento tipoDocumento = new TipoDocumento();
-                    tipoDocumento.setId(facturaRequest.getCliente().getTipoDocumentoId());
-                    nuevoCliente.setTipoDocumento(tipoDocumento);
-                    
-                    return clienteRepository.save(nuevoCliente);
-                });
+    @Autowired
+    private CompraRepository compraRepository;
 
-        // Buscar Vendedor
-        Vendedor vendedor = vendedorRepository.findByDocumento(facturaRequest.getVendedor().getDocumento())
-                .orElseThrow(() -> new RuntimeException("Vendedor no encontrado con documento: " + facturaRequest.getVendedor().getDocumento()));
+    @Autowired
+    private DetalleCompraRepository detalleCompraRepository;
 
-        // Buscar Cajero
-        Cajero cajero = cajeroRepository.findByToken(facturaRequest.getCajero().getToken())
-                .orElseThrow(() -> new RuntimeException("Cajero no encontrado con token: " + facturaRequest.getCajero().getToken()));
+    @Autowired
+    private ProductoRepository productoRepository;
 
-        // Crear y Guardar la Compra
+    @Autowired
+    private TipoPagoRepository tipoPagoRepository;
+
+    @Autowired
+    private PagoRepository pagoRepository;
+
+    @Autowired
+    private VendedorRepository vendedorRepository;
+
+    @Autowired
+    private TipoDocumentoRepository tipoDocumentoRepository;
+
+    /**
+     * Método para crear una factura en el sistema.
+     *
+     * @param tiendaUuid UUID de la tienda donde se realiza la compra.
+     * @param request    Objeto con la información de la factura.
+     */
+    @Transactional
+    public void crearFactura(String tiendaUuid, FacturaRequest request) {
+        // Validar tienda
+        Optional<Tienda> tiendaOpt = tiendaRepository.findByUuid(tiendaUuid);
+        if (tiendaOpt.isEmpty()) {
+            throw new IllegalArgumentException("Tienda no encontrada.");
+        }
+        Tienda tienda = tiendaOpt.get();
+
+        // Validar o registrar cliente
+        Cliente cliente = clienteRepository.findByDocumento(request.getCliente().getDocumento());
+        if (cliente == null) {
+            cliente = new Cliente();
+            cliente.setDocumento(request.getCliente().getDocumento());
+            cliente.setNombre(request.getCliente().getNombre());
+            cliente.setTipoDocumento(tipoDocumentoRepository.findByNombre(request.getCliente().getTipoDocumento()));
+            clienteRepository.save(cliente);
+        }
+
+        // Validar vendedor
+        Vendedor vendedor = vendedorRepository.findByDocumento(request.getVendedor().getDocumento());
+        if (vendedor == null) {
+            throw new IllegalArgumentException("Vendedor no encontrado.");
+        }
+
+        // Validar cajero
+        Cajero cajero = cajeroRepository.findByToken(request.getCajero().getToken());
+        if (cajero == null || !cajero.getTienda().getId().equals(tienda.getId())) {
+            throw new IllegalArgumentException("Cajero no autorizado.");
+        }
+
+        // Crear compra
         Compra compra = new Compra();
         compra.setCliente(cliente);
         compra.setTienda(tienda);
         compra.setVendedor(vendedor);
         compra.setCajero(cajero);
-        compra.setFecha(LocalDateTime.now());
-        compra.setImpuestos(facturaRequest.getImpuestos());
-        compra = compraRepository.save(compra);
+        compra.setImpuestos(request.getImpuesto());
+        compra.setTotal(0.0);
+        compra.setObservaciones("Factura creada");
+        compraRepository.save(compra);
 
-        // Procesar Detalles de Compra y Calcular Total
+        // Procesar productos y calcular total
         double total = 0.0;
-        for (DetalleProductoDTO detalleProducto : facturaRequest.getProductos()) {
-            Producto producto = productoRepository.findByReferencia(detalleProducto.getReferencia())
-                    .orElseThrow(() -> new RuntimeException("Producto no encontrado con referencia: " + detalleProducto.getReferencia()));
+        for (ProductoRequest productoRequest : request.getProductos()) {
+            Producto producto = productoRepository.findByReferencia(productoRequest.getReferencia());
+            if (producto == null) {
+                throw new IllegalArgumentException("Producto no encontrado: " + productoRequest.getReferencia());
+            }
 
             DetalleCompra detalle = new DetalleCompra();
             detalle.setCompra(compra);
             detalle.setProducto(producto);
-            detalle.setCantidad(detalleProducto.getCantidad());
-
-            double precioFinal = producto.getPrecio() * detalleProducto.getCantidad() * 
-                                 (1 - detalleProducto.getDescuento() / 100.0);
-            detalle.setPrecio(precioFinal);
-            detalle.setDescuento(detalleProducto.getDescuento());
-
+            detalle.setCantidad(productoRequest.getCantidad());
+            detalle.setDescuento(productoRequest.getDescuento());
+            detalle.setPrecio(producto.getPrecio() * productoRequest.getCantidad() - productoRequest.getDescuento());
             detalleCompraRepository.save(detalle);
-            total += precioFinal;
+
+            total += detalle.getPrecio();
         }
-        compra.setTotal(total);
+        compra.setTotal(total + request.getImpuesto());
         compraRepository.save(compra);
 
-        // Procesar Pagos
-        for (MedioPagoDTO medioPago : facturaRequest.getMediosPago()) {
-            TipoPago tipoPago = tipoPagoRepository.findByNombre(medioPago.getTipoPago())
-                    .orElseThrow(() -> new RuntimeException("Tipo de pago no encontrado: " + medioPago.getTipoPago()));
-
+        // Procesar pagos
+        for (PagoRequest pagoRequest : request.getMediosPago()) {
             Pago pago = new Pago();
             pago.setCompra(compra);
-            pago.setTipoPago(tipoPago);
-            pago.setTarjetaTipo(medioPago.getTipoTarjeta());
-            pago.setCuotas(medioPago.getCuotas());
-            pago.setValor(medioPago.getValor());
-
+            pago.setTipoPago(tipoPagoRepository.findByNombre(pagoRequest.getTipoPago()));
+            pago.setTarjetaTipo(pagoRequest.getTipoTarjeta());
+            pago.setCuotas(pagoRequest.getCuotas());
+            pago.setValor(pagoRequest.getValor());
             pagoRepository.save(pago);
         }
+    }
+
+    /**
+     * Método para consultar una factura.
+     *
+     * @param tiendaUuid UUID de la tienda.
+     * @param request    Objeto con la información de consulta.
+     * @return Objeto con los detalles de la factura.
+     */
+    @Transactional(readOnly = true)
+    public FacturaResponse consultarFactura(String tiendaUuid, FacturaConsultaRequest request) {
+        // Validar tienda
+        Optional<Tienda> tiendaOpt = tiendaRepository.findByUuid(tiendaUuid);
+        if (tiendaOpt.isEmpty()) {
+            throw new IllegalArgumentException("Tienda no encontrada.");
+        }
+        Tienda tienda = tiendaOpt.get();
+
+        // Validar cajero por token
+        Cajero cajero = cajeroRepository.findByToken(request.getToken());
+        if (cajero == null || !cajero.getTienda().getId().equals(tienda.getId())) {
+            throw new IllegalArgumentException("Cajero no autorizado.");
+        }
+
+        // Validar cliente
+        Cliente cliente = clienteRepository.findByDocumento(request.getCliente());
+        if (cliente == null) {
+            throw new IllegalArgumentException("Cliente no encontrado.");
+        }
+
+        // Validar factura
+        Compra compra = compraRepository.findById(request.getFactura())
+                .orElseThrow(() -> new IllegalArgumentException("Factura no encontrada."));
+        if (!compra.getCliente().getId().equals(cliente.getId())) {
+            throw new IllegalArgumentException("La factura no pertenece al cliente proporcionado.");
+        }
+
+        // Construir respuesta
+        FacturaResponse response = new FacturaResponse();
+        response.setTotal(compra.getTotal());
+        response.setImpuestos(compra.getImpuestos());
+
+        ClienteResponse clienteResponse = new ClienteResponse();
+        clienteResponse.setDocumento(cliente.getDocumento());
+        clienteResponse.setNombre(cliente.getNombre());
+        clienteResponse.setTipoDocumento(cliente.getTipoDocumento().getNombre());
+        response.setCliente(clienteResponse);
+
+        List<ProductoResponse> productosResponse = detalleCompraRepository.findAll()
+                .stream()
+                .filter(detalle -> detalle.getCompra().getId().equals(compra.getId()))
+                .map(detalle -> {
+                    ProductoResponse productoResponse = new ProductoResponse();
+                    Producto producto = detalle.getProducto();
+                    productoResponse.setReferencia(producto.getReferencia());
+                    productoResponse.setNombre(producto.getNombre());
+                    productoResponse.setCantidad(detalle.getCantidad());
+                    productoResponse.setPrecio(producto.getPrecio());
+                    productoResponse.setDescuento(detalle.getDescuento());
+                    productoResponse.setSubtotal(detalle.getPrecio());
+                    return productoResponse;
+                })
+                .toList();
+        response.setProductos(productosResponse);
+
+        CajeroResponse cajeroResponse = new CajeroResponse();
+        cajeroResponse.setDocumento(cajero.getDocumento());
+        cajeroResponse.setNombre(cajero.getNombre());
+        response.setCajero(cajeroResponse);
+
+        return response;
     }
 }

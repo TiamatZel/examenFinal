@@ -8,7 +8,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ufps.services.FacturaService;
 
+import DTOs.ConsultaFacturaRequest;
 import DTOs.FacturaRequest;
+import DTOs.FacturaResponse;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 
 @RestController
@@ -25,5 +27,13 @@ public class FacturaController {
     public ResponseEntity<?> crearFactura(@PathVariable String tiendaId, @RequestBody FacturaRequest request) {
         facturaService.procesarFactura(tiendaId, request);
         return ResponseEntity.ok("Factura registrada exitosamente");
+    }
+    
+    @PostMapping("/consultar/{tiendaUuid}")
+    public ResponseEntity<FacturaResponse> consultarFactura(
+            @PathVariable String tiendaUuid,
+            @RequestBody ConsultaFacturaRequest consultaFacturaRequest) {
+        FacturaResponse facturaResponse = facturaService.consultarFactura(tiendaUuid, consultaFacturaRequest);
+        return ResponseEntity.ok(facturaResponse);
     }
 }
