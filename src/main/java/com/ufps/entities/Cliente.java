@@ -1,8 +1,12 @@
 package com.ufps.entities;
 
 import jakarta.persistence.*;
+import lombok.*;
 
 @Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "cliente")
 public class Cliente {
 

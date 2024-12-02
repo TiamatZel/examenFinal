@@ -1,8 +1,12 @@
 package com.ufps.entities;
 
 import jakarta.persistence.*;
+import lombok.*;
 
 @Entity
+@Data
+@NoArgsConstructor
+@AllArgsConstructor
 @Table(name = "detalles_compra")
 public class DetalleCompra {
 
@@ -20,7 +24,9 @@ public class DetalleCompra {
 
     private Integer cantidad;
 
-    private Double valorUnitario;
+    private Double precio;
+    
+    private Double descuento;
 
     // Getters, Setters, Constructor
 }
